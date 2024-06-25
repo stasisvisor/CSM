@@ -1,0 +1,55 @@
+import { DirectSecp256k1HdWallet } from "@cosmjs/proto-signing";
+import { SigningStargateClient } from "@cosmjs/stargate";
+import { assertIsBroadcastTxSuccess } from "@cosmjs/stargate";
+
+const mnemonic = "YOUR_WALLET_MNEMONIC"; // Вставьте свой мнемоник кошелька
+const rpcEndpoint = "https://rpc.cosmos.network"; // Вставьте URL RPC эндпоинта
+const validatorAddress = "cosmosvaloper1..."; // Вставьте адрес валидатора
+const delegatorAddress = "cosmos1..."; // Вставьте адрес делегатора (ваш адрес)
+
+async function autoRestake() {
+    const wallet = await DirectSecp256k1HdWallet.fromMnemonic(mnemonic, {
+        prefix: "cosmos",
+    });
+    const [firstAccount] = await wallet.getAccounts();
+
+    const client = await SigningStargateClient.connectWithSigner(rpcEndpoint, wallet);
+
+    const rewards = await client.getReward(delegatorAddress, validatorAddress);
+    const rewardAmount = rewards[0].amount;
+
+    if (parseFloat(rewardAmount) > 0) {
+        const msgDelegate = {
+            typeUrl: "/cosmos.staking.v1beta1.MsgDelegate",
+            value: {
+                delegatorAddress: delegatorAddress,
+                validatorAddress: validatorAddress,
+                amount: {
+                    denom: "uatom", // Вставьте нужный деном (например, uatom)
+                    amount: rewardAmount,
+                },
+            },
+        };
+
+        const fee = {
+            amount: [
+                {
+                    denom: "uatom",
+                    amount: "5000", // Вставьте нужную сумму комиссии
+                },
+            ],
+            gas: "200000", // Вставьте нужное значение газа
+        };
+
+        const result = await client.signAndBroadcast(delegatorAddress, [msgDelegate], fee);
+
+        assertIsBroadcastTxSuccess(result);
+        console.log(`Successfully restaked ${rewardAmount} uatom!`);
+    } else {
+        console.log("No rewards to restake.");
+    }
+
+    client.disconnect();
+}
+
+autoRestake().catch(console.error);
